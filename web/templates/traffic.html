@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+
+{% block title %}Traffic Monitor - WiFi Traffic Monitor{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="fas fa-network-wired"></i> Traffic Monitor</h2>
+        <p class="text-muted">Real-time network packet monitoring and analysis</p>
+    </div>
+</div>
+
+<!-- Filter Controls -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-filter"></i> Filters</h5>
+            </div>
+            <div class="card-body">
+                <form id="filterForm" class="row g-3">
+                    <div class="col-md-3">
+                        <label for="protocolFilter" class="form-label">Protocol</label>
+                        <select id="protocolFilter" class="form-select">
+                            <option value="">All Protocols</option>
+                            <option value="TCP">TCP</option>
+                            <option value="UDP">UDP</option>
+                            <option value="ICMP">ICMP</option>
+                            <option value="HTTP">HTTP</option>
+                            <option value="HTTPS">HTTPS</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="srcIpFilter" class="form-label">Source IP</label>
+                        <input type="text" id="srcIpFilter" class="form-control" placeholder="e.g., 192.168.1.1">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="destIpFilter" class="form-label">Destination IP</label>
+                        <input type="text" id="destIpFilter" class="form-control" placeholder="e.g., 192.168.1.1">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="limitFilter" class="form-label">Results per page</label>
+                        <select id="limitFilter" class="form-select">
+                            <option value="25">25</option>
+                            <option value="50" selected>50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search"></i> Apply Filters
+                        </button>
+                        <button type="button" id="clearFilters" class="btn btn-outline-secondary">
+                            <i class="fas fa-times"></i> Clear
+                        </button>
+                        <button type="button" id="exportData" class="btn btn-outline-success">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistics Summary -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h4 id="filteredCount" class="text-primary">0</h4>
+                <p class="mb-0">Filtered Results</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h4 id="totalBytes" class="text-success">0</h4>
+                <p class="mb-0">Total Bytes</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h4 id="avgPacketSize" class="text-warning">0</h4>
+                <p class="mb-0">Avg Packet Size</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h4 id="uniqueIPs" class="text-info">0</h4>
+                <p class="mb-0">Unique IPs</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Packet Table -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-table"></i> Packet Details</h5>
+                <div>
+                    <button id="autoRefresh" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-sync-alt"></i> Auto Refresh: Off
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="loadingSpinner" class="text-center d-none">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Source IP</th>
+                                <th>Source Port</th>
+                                <th>Destination IP</th>
+                                <th>Destination Port</th>
+                                <th>Protocol</th>
+                                <th>Size (B)</th>
+                                <th>URL/Info</th>
+                            </tr>
+                        </thead>
+                        <tbody id="packetsTableBody">
+                            <!-- Packets will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <nav aria-label="Packet pagination">
+                    <ul class="pagination justify-content-center" id="pagination">
+                        <!-- Pagination will be generated here -->
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Packet Detail Modal -->
+<div class="modal fade" id="packetDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Packet Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="packetDetailContent"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = 1;
+let totalPages = 1;
+let autoRefreshInterval = null;
+let isAutoRefreshEnabled = false;
+
+// Load packets on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadPackets();
+});
+
+// Filter form submission
+document.getElementById('filterForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    currentPage = 1;
+    loadPackets();
+});
+
+// Clear filters
+document.getElementById('clearFilters').addEventListener('click', function() {
+    document.getElementById('filterForm').reset();
+    currentPage = 1;
+    loadPackets();
+});
+
+// Auto refresh toggle
+document.getElementById('autoRefresh').addEventListener('click', function() {
+    toggleAutoRefresh();
+});
+
+// Export data
+document.getElementById('exportData').addEventListener('click', function() {
+    exportToCSV();
+});
+
+function loadPackets() {
+    showLoading(true);
+    
+    const protocol = document.getElementById('protocolFilter').value;
+    const srcIp = document.getElementById('srcIpFilter').value;
+    const destIp = document.getElementById('destIpFilter').value;
+    const limit = document.getElementById('limitFilter').value;
+    
+    const params = new URLSearchParams({
+        page: currentPage,
+        limit: limit
+    });
+    
+    if (protocol) params.append('protocol', protocol);
+    if (srcIp) params.append('src_ip', srcIp);
+    if (destIp) params.append('dest_ip', destIp);
+    
+    fetch(`/api/packets?${params}`)
+        .then(response => response.json())
+        .then(data => {
+            displayPackets(data.packets);
+            updatePagination(data.page, data.pages, data.total);
+            updateStatistics(data.packets);
+            showLoading(false);
+        })
+        .catch(error => {
+            console.error('Error loading packets:', error);
+            showLoading(false);
+            alert('Error loading packets');
+        });
+}
+
+function displayPackets(packets) {
+    const tbody = document.getElementById('packetsTableBody');
+    tbody.innerHTML = '';
+    
+    if (packets.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">No packets found</td></tr>';
+        return;
+    }
+    
+    packets.forEach(packet => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${formatTimestamp(packet.timestamp)}</td>
+            <td>${packet.src_ip || 'N/A'}</td>
+            <td>${packet.src_port || 'N/A'}</td>
+            <td>${packet.dest_ip || 'N/A'}</td>
+            <td>${packet.dest_port || 'N/A'}</td>
+            <td><span class="badge bg-${getProtocolColor(packet.protocol)}">${packet.protocol || 'Unknown'}</span></td>
+            <td>${packet.packet_length}</td>
+            <td>${packet.url || packet.dns_query || ''}</td>
+        `;
+        
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', () => showPacketDetail(packet));
+        
+        tbody.appendChild(row);
+    });
+}
+
+function updatePagination(page, pages, total) {
+    currentPage = page;
+    totalPages = pages;
+    
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = '';
+    
+    if (pages <= 1) return;
+    
+    // Previous button
+    const prevItem = document.createElement('li');
+    prevItem.className = `page-item ${page === 1 ? 'disabled' : ''}`;
+    prevItem.innerHTML = '<a class="page-link" href="#" data-page="' + (page - 1) + '">Previous</a>';
+    pagination.appendChild(prevItem);
+    
+    // Page numbers
+    const startPage = Math.max(1, page - 2);
+    const endPage = Math.min(pages, page + 2);
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const pageItem = document.createElement('li');
+        pageItem.className = `page-item ${i === page ? 'active' : ''}`;
+        pageItem.innerHTML = '<a class="page-link" href="#" data-page="' + i + '">' + i + '</a>';
+        pagination.appendChild(pageItem);
+    }
+    
+    // Next button
+    const nextItem = document.createElement('li');
+    nextItem.className = `page-item ${page === pages ? 'disabled' : ''}`;
+    nextItem.innerHTML = '<a class="page-link" href="#" data-page="' + (page + 1) + '">Next</a>';
+    pagination.appendChild(nextItem);
+    
+    // Add click handlers
+    pagination.addEventListener('click', function(e) {
+        e.preventDefault();
+        if (e.target.classList.contains('page-link')) {
+            const newPage = parseInt(e.target.dataset.page);
+            if (newPage && newPage !== currentPage) {
+                currentPage = newPage;
+                loadPackets();
+            }
+        }
+    });
+}
+
+function updateStatistics(packets) {
+    const filteredCount = packets.length;
+    const totalBytes = packets.reduce((sum, p) => sum + (p.packet_length || 0), 0);
+    const avgPacketSize = filteredCount > 0 ? Math.round(totalBytes / filteredCount) : 0;
+    const uniqueIPs = new Set([...packets.map(p => p.src_ip), ...packets.map(p => p.dest_ip)]).size;
+    
+    document.getElementById('filteredCount').textContent = filteredCount;
+    document.getElementById('totalBytes').textContent = formatBytes(totalBytes);
+    document.getElementById('avgPacketSize').textContent = avgPacketSize + 'B';
+    document.getElementById('uniqueIPs').textContent = uniqueIPs;
+}
+
+function showPacketDetail(packet) {
+    const modal = new bootstrap.Modal(document.getElementById('packetDetailModal'));
+    const content = document.getElementById('packetDetailContent');
+    content.textContent = JSON.stringify(packet, null, 2);
+    modal.show();
+}
+
+function toggleAutoRefresh() {
+    const button = document.getElementById('autoRefresh');
+    
+    if (isAutoRefreshEnabled) {
+        clearInterval(autoRefreshInterval);
+        button.innerHTML = '<i class="fas fa-sync-alt"></i> Auto Refresh: Off';
+        button.className = 'btn btn-sm btn-outline-primary';
+        isAutoRefreshEnabled = false;
+    } else {
+        autoRefreshInterval = setInterval(loadPackets, 5000);
+        button.innerHTML = '<i class="fas fa-sync-alt"></i> Auto Refresh: On';
+        button.className = 'btn btn-sm btn-success';
+        isAutoRefreshEnabled = true;
+    }
+}
+
+function exportToCSV() {
+    const params = new URLSearchParams({
+        page: 1,
+        limit: 10000 // Large limit for export
+    });
+    
+    const protocol = document.getElementById('protocolFilter').value;
+    const srcIp = document.getElementById('srcIpFilter').value;
+    const destIp = document.getElementById('destIpFilter').value;
+    
+    if (protocol) params.append('protocol', protocol);
+    if (srcIp) params.append('src_ip', srcIp);
+    if (destIp) params.append('dest_ip', destIp);
+    
+    fetch(`/api/packets?${params}`)
+        .then(response => response.json())
+        .then(data => {
+            const csv = convertToCSV(data.packets);
+            downloadCSV(csv, 'packets_export.csv');
+        })
+        .catch(error => {
+            console.error('Error exporting data:', error);
+            alert('Error exporting data');
+        });
+}
+
+function convertToCSV(packets) {
+    const headers = ['Timestamp', 'Source IP', 'Source Port', 'Destination IP', 'Destination Port', 'Protocol', 'Size', 'URL'];
+    const csvData = [headers.join(',')];
+    
+    packets.forEach(packet => {
+        const row = [
+            packet.timestamp,
+            packet.src_ip || '',
+            packet.src_port || '',
+            packet.dest_ip || '',
+            packet.dest_port || '',
+            packet.protocol || '',
+            packet.packet_length || '',
+            (packet.url || packet.dns_query || '').replace(/,/g, ';')
+        ];
+        csvData.push(row.join(','));
+    });
+    
+    return csvData.join('\n');
+}
+
+function downloadCSV(csv, filename) {
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    window.URL.revokeObjectURL(url);
+}
+
+function showLoading(show) {
+    const spinner = document.getElementById('loadingSpinner');
+    if (show) {
+        spinner.classList.remove('d-none');
+    } else {
+        spinner.classList.add('d-none');
+    }
+}
+
+function formatTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    return date.toLocaleString();
+}
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function getProtocolColor(protocol) {
+    const colors = {
+        'TCP': 'primary',
+        'UDP': 'success',
+        'ICMP': 'warning',
+        'HTTP': 'info',
+        'HTTPS': 'secondary'
+    };
+    return colors[protocol] || 'dark';
+}
+</script>
+{% endblock %}

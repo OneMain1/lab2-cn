@@ -1,0 +1,49 @@
+{
+  "database": {
+    "uri": "mongodb://localhost:27017/",
+    "name": "traffic_monitor",
+    "collections": {
+      "packets": "packets",
+      "users": "users",
+      "sessions": "sessions"
+    }
+  },
+  "security": {
+    "rsa_key_size": 2048,
+    "jwt_expiry_hours": 24,
+    "password_min_length": 8,
+    "max_login_attempts": 5,
+    "lockout_duration_minutes": 30
+  },
+  "capture": {
+    "interface": "wlan0",
+    "buffer_size": 65535,
+    "timeout": 30,
+    "protocols": ["TCP", "UDP", "ICMP", "HTTP", "HTTPS", "DNS"],
+    "capture_filters": {
+      "http": "port 80",
+      "https": "port 443",
+      "dns": "port 53"
+    }
+  },
+  "monitoring": {
+    "stats_update_interval": 30,
+    "cleanup_old_packets_days": 30,
+    "max_packets_per_query": 10000,
+    "real_time_update_interval": 5
+  },
+  "web": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "debug": false,
+    "ssl_context": "adhoc",
+    "max_content_length": 16777216
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "/var/log/wifi-monitor/app.log",
+    "max_size": 10485760,
+    "backup_count": 5,
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  }
+}

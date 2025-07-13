@@ -1,0 +1,27 @@
+# WiFi Traffic Monitoring System - Python Dependencies
+
+# Web Framework
+Flask==2.3.3
+gunicorn==21.2.0
+
+# Database
+pymongo==4.5.0
+
+# Network Analysis
+scapy==2.5.0
+
+# Cryptography and Security
+cryptography==41.0.4
+PyJWT==2.8.0
+
+# Utilities
+python-dotenv==1.0.0
+requests==2.31.0
+
+# Optional: For background tasks
+celery==5.3.1
+redis==4.6.0
+
+# Development and Testing
+pytest==7.4.2
+pytest-cov==4.1.0

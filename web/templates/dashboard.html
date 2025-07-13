@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - WiFi Traffic Monitor{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="fas fa-tachometer-alt"></i> Network Traffic Dashboard</h2>
+            <div class="d-flex gap-2">
+                {% if session.role == 'admin' %}
+                <button id="toggleCapture" class="btn btn-outline-primary">
+                    <i class="fas fa-play"></i> <span id="captureButtonText">Start Capture</span>
+                </button>
+                {% endif %}
+                <button id="refreshData" class="btn btn-outline-secondary">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Status Cards -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 id="totalPackets">{{ stats.total_packets or 0 }}</h4>
+                        <p class="mb-0">Total Packets</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-chart-line fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 id="activeDevices">{{ stats.top_sources|length or 0 }}</h4>
+                        <p class="mb-0">Active Devices</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-devices fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 id="captureStatus">
+                            {% if capture_status.is_running %}
+                                <i class="fas fa-circle text-success"></i> Active
+                            {% else %}
+                                <i class="fas fa-circle text-danger"></i> Stopped
+                            {% endif %}
+                        </h4>
+                        <p class="mb-0">Capture Status</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-wifi fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4>{{ capture_status.interface or 'N/A' }}</h4>
+                        <p class="mb-0">Interface</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-ethernet fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row mb-4">
+    <div class="col-lg-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-pie"></i> Protocol Distribution</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="protocolChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-line"></i> Traffic Over Time (24h)</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="trafficChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Top Sources and Recent Activity -->
+<div class="row">
+    <div class="col-lg-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-list-ol"></i> Top Source IPs</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>IP Address</th>
+                                <th>Packet Count</th>
+                            </tr>
+                        </thead>
+                        <tbody id="topSourcesTable">
+                            {% for source in stats.top_sources %}
+                            <tr>
+                                <td>{{ source._id }}</td>
+                                <td>{{ source.count }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-clock"></i> Recent Packets</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Source</th>
+                                <th>Destination</th>
+                                <th>Protocol</th>
+                                <th>Size</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentPacketsTable">
+                            {% for packet in recent_packets %}
+                            <tr>
+                                <td>{{ packet.timestamp[-8:] }}</td>
+                                <td>{{ packet.src_ip }}</td>
+                                <td>{{ packet.dest_ip }}</td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ packet.protocol }}</span>
+                                </td>
+                                <td>{{ packet.packet_length }}B</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Initialize charts with data
+const statsData = {{ stats|tojson }};
+
+// Protocol Distribution Chart
+const protocolCtx = document.getElementById('protocolChart').getContext('2d');
+const protocolChart = new Chart(protocolCtx, {
+    type: 'doughnut',
+    data: {
+        labels: statsData.protocol_stats?.map(p => p._id) || [],
+        datasets: [{
+            data: statsData.protocol_stats?.map(p => p.count) || [],
+            backgroundColor: [
+                '#FF6384',
+                '#36A2EB',
+                '#FFCE56',
+                '#4BC0C0',
+                '#9966FF',
+                '#FF9F40'
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+
+// Traffic Over Time Chart
+const trafficCtx = document.getElementById('trafficChart').getContext('2d');
+const trafficChart = new Chart(trafficCtx, {
+    type: 'line',
+    data: {
+        labels: statsData.hourly_stats?.map(h => h._id.split(' ')[1]) || [],
+        datasets: [{
+            label: 'Packets per Hour',
+            data: statsData.hourly_stats?.map(h => h.count) || [],
+            borderColor: '#36A2EB',
+            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+            fill: true,
+            tension: 0.4
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+
+// Auto-refresh functionality
+let autoRefresh = setInterval(updateRealtimeData, 30000);
+
+function updateRealtimeData() {
+    fetch('/api/realtime_stats')
+        .then(response => response.json())
+        .then(data => {
+            // Update capture status
+            const captureStatusElement = document.getElementById('captureStatus');
+            if (data.capture_running) {
+                captureStatusElement.innerHTML = '<i class="fas fa-circle text-success"></i> Active';
+            } else {
+                captureStatusElement.innerHTML = '<i class="fas fa-circle text-danger"></i> Stopped';
+            }
+            
+            // Update toggle button
+            updateCaptureButton(data.capture_running);
+            
+            console.log('Realtime data updated:', data.timestamp);
+        })
+        .catch(error => console.error('Error updating realtime data:', error));
+}
+
+// Capture control
+document.getElementById('toggleCapture')?.addEventListener('click', function() {
+    const isRunning = this.innerHTML.includes('Stop');
+    const endpoint = isRunning ? '/api/capture/stop' : '/api/capture/start';
+    
+    fetch(endpoint, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status) {
+                updateCaptureButton(data.status === 'started');
+                updateRealtimeData();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error toggling capture:', error);
+            alert('Error toggling capture');
+        });
+});
+
+function updateCaptureButton(isRunning) {
+    const button = document.getElementById('toggleCapture');
+    const buttonText = document.getElementById('captureButtonText');
+    
+    if (isRunning) {
+        button.className = 'btn btn-outline-danger';
+        button.innerHTML = '<i class="fas fa-stop"></i> <span id="captureButtonText">Stop Capture</span>';
+    } else {
+        button.className = 'btn btn-outline-success';
+        button.innerHTML = '<i class="fas fa-play"></i> <span id="captureButtonText">Start Capture</span>';
+    }
+}
+
+// Refresh data button
+document.getElementById('refreshData').addEventListener('click', function() {
+    location.reload();
+});
+
+// Initialize capture button state
+updateRealtimeData();
+</script>
+{% endblock %}
