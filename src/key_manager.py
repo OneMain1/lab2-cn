@@ -113,6 +113,16 @@ class KeyManager:
             self.logger.error(f"Error loading keys: {e}")
             self.generate_keys()
     
+    def generate_key_pair(self):
+        """Generate or return existing key pair for testing"""
+        if not self.private_key or not self.public_key:
+            self.generate_keys()
+        
+        return {
+            'private_key': self.private_key,
+            'public_key': self.public_key
+        }
+    
     def load_users_db(self):
         """Load users database"""
         users_db_path = os.path.join(self.keys_dir, 'users.json')

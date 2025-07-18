@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:5.0
+    container_name: wifi-monitor-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=traffic_monitor
+    networks:
+      - wifi-monitor-net
+
+  wifi-monitor:
+    build: .
+    container_name: wifi-monitor-app
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./src:/app/src
+      - ./web:/app/web
+      - ./config:/app/config
+      - ./keys:/app/keys
+      - ./logs:/app/logs
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/
+      - FLASK_ENV=development
+      - TESTING=true
+    depends_on:
+      - mongodb
+    networks:
+      - wifi-monitor-net
+    # For packet capture capabilities
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    # Access to host network interfaces
+    network_mode: host
+
+volumes:
+  mongodb_data:
+
+networks:
+  wifi-monitor-net:
+    driver: bridge

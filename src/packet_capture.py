@@ -16,10 +16,12 @@ import re
 import hashlib
 
 class PacketCapture:
-    def __init__(self, interface='wlan0', mongodb_uri='mongodb://localhost:27017/', db_name='traffic_monitor'):
+    def __init__(self, interface='wlan0', mongodb_uri='mongodb://localhost:27017/', db_name='traffic_monitor', capture_mode='standard', network_filter=None):
         self.interface = interface
         self.mongodb_uri = mongodb_uri
         self.db_name = db_name
+        self.capture_mode = capture_mode  # 'standard', 'mirror', 'monitor'
+        self.network_filter = network_filter
         self.client = None
         self.db = None
         self.collection = None
@@ -39,6 +41,9 @@ class PacketCapture:
         
         # Initialize MongoDB connection
         self.init_mongodb()
+        
+        # Setup capture interface
+        self.setup_capture_interface()
         
     def init_mongodb(self):
         """Initialize MongoDB connection"""
@@ -134,23 +139,85 @@ class PacketCapture:
         if packet_info:
             self.save_packet_to_db(packet_info)
     
+    def setup_capture_interface(self):
+        """Setup interface based on capture mode"""
+        import subprocess
+        
+        try:
+            if self.capture_mode == 'mirror':
+                # Port mirroring mode - enable promiscuous mode
+                subprocess.run(['sudo', 'ip', 'link', 'set', self.interface, 'promisc', 'on'], 
+                             check=False, capture_output=True)
+                self.logger.info(f"Enabled promiscuous mode on {self.interface}")
+                
+            elif self.capture_mode == 'monitor':
+                # WiFi monitor mode
+                result = subprocess.run(['sudo', 'airmon-ng', 'start', self.interface], 
+                                      check=False, capture_output=True, text=True)
+                if result.returncode == 0:
+                    self.interface = f"{self.interface}mon"
+                    self.logger.info(f"Set {self.interface} to monitor mode")
+                else:
+                    self.logger.warning("Failed to set monitor mode, continuing with standard mode")
+                    
+        except Exception as e:
+            self.logger.warning(f"Interface setup failed: {e}, continuing with standard mode")
+    
+    def create_capture_filter(self):
+        """Create BPF filter based on network configuration"""
+        if self.network_filter:
+            return self.network_filter
+            
+        # Default filters
+        filters = []
+        
+        # For real environment (172.26.35.0/24)
+        if '172.26.35' in str(self.interface) or self.capture_mode == 'mirror':
+            filters = [
+                "net 172.26.35.0/24",
+                "host 172.26.35.10",  # Router
+                "not arp and not icmp6"  # Reduce noise
+            ]
+        else:
+            # Standard lab environment
+            filters = [
+                "net 192.168.100.0/24",
+                "not arp and not icmp6"
+            ]
+            
+        return " or ".join(filters) if filters else None
+    
     def start_capture(self):
         """Start packet capture"""
         if self.is_running:
             self.logger.warning("Capture is already running")
             return
             
+        packet_filter = self.create_capture_filter()
         self.is_running = True
-        self.logger.info(f"Starting packet capture on interface: {self.interface}")
+        
+        if packet_filter:
+            self.logger.info(f"Starting packet capture on {self.interface} with filter: {packet_filter}")
+        else:
+            self.logger.info(f"Starting packet capture on {self.interface} (no filter)")
         
         def capture_loop():
             try:
-                sniff(
-                    iface=self.interface,
-                    prn=self.packet_handler,
-                    store=0,
-                    stop_filter=lambda p: not self.is_running
-                )
+                if packet_filter:
+                    sniff(
+                        iface=self.interface,
+                        prn=self.packet_handler,
+                        filter=packet_filter,
+                        store=0,
+                        stop_filter=lambda p: not self.is_running
+                    )
+                else:
+                    sniff(
+                        iface=self.interface,
+                        prn=self.packet_handler,
+                        store=0,
+                        stop_filter=lambda p: not self.is_running
+                    )
             except Exception as e:
                 self.logger.error(f"Error in capture loop: {e}")
                 self.is_running = False
@@ -213,6 +280,8 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--duration', type=int, help='Capture duration in seconds')
     parser.add_argument('--mongodb-uri', default='mongodb://localhost:27017/', help='MongoDB connection URI')
     parser.add_argument('--db-name', default='traffic_monitor', help='Database name')
+    parser.add_argument('--capture-mode', choices=['standard', 'mirror', 'monitor'], default='standard', help='Capture mode')
+    parser.add_argument('--filter', help='Custom BPF filter for packet capture')
     
     args = parser.parse_args()
     
@@ -220,7 +289,9 @@ if __name__ == "__main__":
     capture = PacketCapture(
         interface=args.interface,
         mongodb_uri=args.mongodb_uri,
-        db_name=args.db_name
+        db_name=args.db_name,
+        capture_mode=args.capture_mode,
+        network_filter=args.filter
     )
     
     try:

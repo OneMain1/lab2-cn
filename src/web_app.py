@@ -17,7 +17,11 @@ import time
 from key_manager import KeyManager
 from packet_capture import PacketCapture
 
-app = Flask(__name__)
+# Set up Flask app with correct template and static folders
+template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web', 'templates'))
+static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web', 'static'))
+
+app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this')
 
 # Configuration

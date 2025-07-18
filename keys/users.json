@@ -1,0 +1,9 @@
+{
+  "admin": {
+    "password_hash": "j3/Yv/T1vwGHTwHIURuQvTQ0QcV/BAwZfs6pot3ljOt22/KAxtFJc77yI3swyWBQLWpEJNNoGoWMD6Ytqu89wA==",
+    "role": "admin",
+    "created_at": "2025-07-16T15:39:44.799003",
+    "expires_at": "2025-08-15T15:39:44.775853",
+    "active": true
+  }
+}
