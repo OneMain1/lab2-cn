@@ -1,0 +1,41 @@
+# Large binary files
+*.deb
+*.dmg
+*.exe
+*.iso
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build directories
+build/
+dist/
+
+# Environment variables
+.env
+.env.local
+
+# Node modules (if any)
+node_modules/
