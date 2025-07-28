@@ -110,7 +110,7 @@
     <div class="col-lg-6 mb-3">
         <div class="card">
             <div class="card-header">
-                <h5><i class="fas fa-chart-line"></i> Traffic Over Time (24h)</h5>
+                <h5><i class="fas fa-chart-line"></i> Traffic Over Time (2h) <small id="chartLastUpdate" class="text-muted"></small></h5>
             </div>
             <div class="card-body">
                 <canvas id="trafficChart" width="400" height="200"></canvas>
@@ -169,7 +169,7 @@
                         <tbody id="recentPacketsTable">
                             {% for packet in recent_packets %}
                             <tr>
-                                <td>{{ packet.timestamp[-8:] }}</td>
+                                <td>{{ packet.display_time or packet.timestamp[-8:] }}</td>
                                 <td>{{ packet.src_ip }}</td>
                                 <td>{{ packet.dest_ip }}</td>
                                 <td>
@@ -223,34 +223,84 @@ const protocolChart = new Chart(protocolCtx, {
 
 // Traffic Over Time Chart
 const trafficCtx = document.getElementById('trafficChart').getContext('2d');
+
+// Process traffic stats data for better x-axis labels
+const hourlyData = statsData.hourly_stats || [];
+const chartLabels = hourlyData.map(h => {
+    const parts = h._id.split(' ');
+    if (parts.length >= 2) {
+        const time = parts[1];
+        // Show only time for 2-hour window
+        return time;
+    }
+    return h._id;
+});
+
 const trafficChart = new Chart(trafficCtx, {
     type: 'line',
     data: {
-        labels: statsData.hourly_stats?.map(h => h._id.split(' ')[1]) || [],
+        labels: chartLabels,
         datasets: [{
-            label: 'Packets per Hour',
-            data: statsData.hourly_stats?.map(h => h.count) || [],
+            label: 'Packets per 10min',
+            data: hourlyData.map(h => h.count),
             borderColor: '#36A2EB',
             backgroundColor: 'rgba(54, 162, 235, 0.1)',
             fill: true,
-            tension: 0.4
+            tension: 0.4,
+            pointRadius: 4,
+            pointHoverRadius: 6
         }]
     },
     options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: {
+            duration: 750,
+            easing: 'easeInOutQuart'
+        },
         scales: {
+            x: {
+                display: true,
+                title: {
+                    display: true,
+                    text: 'Time (HH:MM) - Last 2 Hours'
+                },
+                type: 'category',
+                ticks: {
+                    maxRotation: 45,
+                    minRotation: 0,
+                    autoSkip: true,
+                    maxTicksLimit: 12
+                }
+            },
             y: {
-                beginAtZero: true
+                beginAtZero: true,
+                title: {
+                    display: true,
+                    text: 'Packet Count'
+                },
+                ticks: {
+                    stepSize: 1
+                }
             }
+        },
+        plugins: {
+            legend: {
+                display: true
+            }
+        },
+        interaction: {
+            intersect: false,
+            mode: 'index'
         }
     }
 });
 
 // Auto-refresh functionality
-let autoRefresh = setInterval(updateRealtimeData, 30000);
+let autoRefresh = setInterval(updateRealtimeData, 2000);
 
 function updateRealtimeData() {
+    // Update stats and capture status
     fetch('/api/realtime_stats')
         .then(response => response.json())
         .then(data => {
@@ -268,46 +318,261 @@ function updateRealtimeData() {
             console.log('Realtime data updated:', data.timestamp);
         })
         .catch(error => console.error('Error updating realtime data:', error));
+    
+    // Update recent packets table
+    fetch('/api/packets?limit=20')
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.getElementById('recentPacketsTable');
+            if (tbody && data.packets) {
+                tbody.innerHTML = data.packets.map(packet => `
+                    <tr>
+                        <td>${new Date(packet.timestamp).toLocaleTimeString()}</td>
+                        <td>${packet.src_ip}</td>
+                        <td>${packet.dest_ip}</td>
+                        <td><span class="badge bg-secondary">${packet.protocol}</span></td>
+                        <td>${packet.packet_length}B</td>
+                    </tr>
+                `).join('');
+            }
+        })
+        .catch(error => console.error('Error updating packets:', error));
 }
 
-// Capture control
+// Capture control - improved with immediate feedback
 document.getElementById('toggleCapture')?.addEventListener('click', function() {
     const isRunning = this.innerHTML.includes('Stop');
     const endpoint = isRunning ? '/api/capture/stop' : '/api/capture/start';
+    const button = this;
+    
+    // Show loading state
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
     
     fetch(endpoint, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
             if (data.status) {
-                updateCaptureButton(data.status === 'started');
+                const newState = data.status === 'started';
+                updateCaptureButton(newState);
+                
+                // Immediately update dashboard when capture starts
+                if (newState) {
+                    setTimeout(() => {
+                        updateRealtimeData();
+                        updateTotalPacketCount();
+                        console.log('Capture started - dashboard updated');
+                    }, 1000);
+                    
+                    // Clear any existing intervals and start fresh
+                    if (autoRefresh) clearInterval(autoRefresh);
+                    autoRefresh = setInterval(updateRealtimeData, 2000);
+                }
+                
                 updateRealtimeData();
             } else {
                 alert('Error: ' + data.error);
+                button.disabled = false;
             }
         })
         .catch(error => {
             console.error('Error toggling capture:', error);
             alert('Error toggling capture');
+            button.disabled = false;
+        })
+        .finally(() => {
+            // Re-enable button after 2 seconds if still disabled
+            setTimeout(() => {
+                if (button.disabled) {
+                    button.disabled = false;
+                }
+            }, 2000);
         });
 });
 
 function updateCaptureButton(isRunning) {
     const button = document.getElementById('toggleCapture');
-    const buttonText = document.getElementById('captureButtonText');
     
     if (isRunning) {
         button.className = 'btn btn-outline-danger';
         button.innerHTML = '<i class="fas fa-stop"></i> <span id="captureButtonText">Stop Capture</span>';
+        button.disabled = false;
     } else {
         button.className = 'btn btn-outline-success';
         button.innerHTML = '<i class="fas fa-play"></i> <span id="captureButtonText">Start Capture</span>';
+        button.disabled = false;
     }
 }
 
-// Refresh data button
+// Function to update dashboard statistics
+function updateDashboardStats() {
+    fetch('/api/stats')
+        .then(response => response.json())
+        .then(data => {
+            // Update protocol chart if it exists
+            if (typeof protocolChart !== 'undefined' && data.protocol_stats) {
+                protocolChart.data.labels = data.protocol_stats.map(p => p._id);
+                protocolChart.data.datasets[0].data = data.protocol_stats.map(p => p.count);
+                protocolChart.update();
+            }
+            
+            // Update traffic chart with sliding window effect
+            if (typeof trafficChart !== 'undefined' && data.hourly_stats) {
+                // Process labels same way as initial chart
+                const newLabels = data.hourly_stats.map(h => {
+                    const parts = h._id.split(' ');
+                    if (parts.length >= 2) {
+                        const time = parts[1];
+                        return time;
+                    }
+                    return h._id;
+                });
+                
+                const newData = data.hourly_stats.map(h => h.count);
+                
+                // Update chart with smooth animation
+                trafficChart.data.labels = newLabels;
+                trafficChart.data.datasets[0].data = newData;
+                
+                // Auto-scale Y axis based on data
+                if (newData.length > 0) {
+                    const maxValue = Math.max(...newData);
+                    const suggestedMax = Math.max(10, Math.ceil(maxValue * 1.2));
+                    trafficChart.options.scales.y.suggestedMax = suggestedMax;
+                }
+                
+                // Update with animation
+                trafficChart.update('active');
+                
+                // Update chart timestamp
+                const chartUpdateElement = document.getElementById('chartLastUpdate');
+                if (chartUpdateElement) {
+                    const now = new Date();
+                    chartUpdateElement.textContent = `(Updated: ${now.toLocaleTimeString()})`;
+                }
+                
+                console.log(`Chart updated: ${newLabels.length} data points, latest: ${newLabels[newLabels.length-1]}`);
+            }
+            
+            // Update top sources table
+            const topSourcesTable = document.getElementById('topSourcesTable');
+            if (topSourcesTable && data.top_sources) {
+                topSourcesTable.innerHTML = data.top_sources.map(source => `
+                    <tr>
+                        <td>${source._id}</td>
+                        <td>${source.count}</td>
+                    </tr>
+                `).join('');
+            }
+            
+            console.log('Dashboard stats updated');
+        })
+        .catch(error => console.error('Error updating dashboard stats:', error));
+}
+
+// Function to update total packet count
+function updateTotalPacketCount() {
+    fetch('/api/stats')
+        .then(response => response.json())
+        .then(data => {
+            const totalPacketsElement = document.getElementById('totalPackets');
+            if (totalPacketsElement && data.total_packets) {
+                totalPacketsElement.textContent = data.total_packets.toLocaleString();
+            }
+            
+            const activeDevicesElement = document.getElementById('activeDevices');
+            if (activeDevicesElement && data.top_sources) {
+                activeDevicesElement.textContent = data.top_sources.length;
+            }
+            
+            console.log('Packet counts updated');
+        })
+        .catch(error => console.error('Error updating packet counts:', error));
+}
+
+// Refresh data button - completely reinitialize dashboard
 document.getElementById('refreshData').addEventListener('click', function() {
-    location.reload();
+    console.log('Refreshing dashboard...');
+    
+    // Show loading indicator
+    const button = this;
+    const originalContent = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Refreshing...';
+    button.disabled = true;
+    
+    // Clear existing intervals
+    if (typeof autoRefresh !== 'undefined' && autoRefresh) {
+        clearInterval(autoRefresh);
+    }
+    
+    // Reset all status elements to default state
+    resetDashboardStatus();
+    
+    // Update all data with a delay to show loading state properly
+    setTimeout(() => {
+        // Update capture status and button state first
+        updateRealtimeData();
+        
+        // Wait a bit more before updating counts to show the "..." state
+        setTimeout(() => {
+            updateDashboardStats();
+            updateTotalPacketCount();
+        }, 300);
+        
+        // Restart auto-refresh interval
+        autoRefresh = setInterval(updateRealtimeData, 2000);
+        
+        // Restore button after everything is loaded
+        setTimeout(() => {
+            button.innerHTML = originalContent;
+            button.disabled = false;
+            console.log('Dashboard completely reinitialized');
+        }, 800);
+        
+    }, 200);
 });
+
+// Function to reset dashboard status to initial state
+function resetDashboardStatus() {
+    // Reset capture status to unknown state
+    const captureStatusElement = document.getElementById('captureStatus');
+    if (captureStatusElement) {
+        captureStatusElement.innerHTML = '<i class="fas fa-circle text-warning"></i> Checking...';
+    }
+    
+    // Reset capture button to neutral state
+    const toggleButton = document.getElementById('toggleCapture');
+    if (toggleButton) {
+        toggleButton.className = 'btn btn-outline-secondary';
+        toggleButton.innerHTML = '<i class="fas fa-sync"></i> <span id="captureButtonText">Loading...</span>';
+        toggleButton.disabled = true;
+    }
+    
+    // Reset counters to default values
+    const totalPacketsElement = document.getElementById('totalPackets');
+    if (totalPacketsElement) {
+        totalPacketsElement.textContent = '0';
+    }
+    
+    const activeDevicesElement = document.getElementById('activeDevices');
+    if (activeDevicesElement) {
+        activeDevicesElement.textContent = '0';
+    }
+    
+    // Clear recent packets table
+    const recentPacketsTable = document.getElementById('recentPacketsTable');
+    if (recentPacketsTable) {
+        recentPacketsTable.innerHTML = '<tr><td colspan="5" class="text-center">Loading...</td></tr>';
+    }
+    
+    // Clear top sources table
+    const topSourcesTable = document.getElementById('topSourcesTable');
+    if (topSourcesTable) {
+        topSourcesTable.innerHTML = '<tr><td colspan="2" class="text-center">Loading...</td></tr>';
+    }
+    
+    console.log('Dashboard status reset to initial state');
+}
 
 // Initialize capture button state
 updateRealtimeData();

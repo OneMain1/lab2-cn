@@ -120,7 +120,7 @@
                 </div>
                 
                 <div class="table-responsive">
-                    <table class="table table-striped table-hover">
+                    <table class="table table-striped table-hover" style="--bs-table-striped-bg: rgba(0,0,0,0.05);">
                         <thead class="table-dark">
                             <tr>
                                 <th>Timestamp</th>
@@ -167,6 +167,24 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+/* Improve table readability */
+.table tbody tr {
+    color: #212529;
+}
+.table tbody tr:nth-of-type(odd) {
+    background-color: #6c757d !important;
+    color: #ffffff !important;
+}
+.table tbody tr:nth-of-type(even) {
+    background-color: #ffffff !important;
+    color: #212529 !important;
+}
+.table tbody tr:hover {
+    background-color: rgba(13, 110, 253, 0.1) !important;
+    color: #000 !important;
+}
+</style>
 <script>
 let currentPage = 1;
 let totalPages = 1;

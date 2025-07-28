@@ -328,20 +328,43 @@ def get_traffic_stats():
         ]
         protocol_stats = list(db.packets.aggregate(protocol_pipeline))
         
-        # Get hourly activity for last 24 hours
-        twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
+        # Get traffic activity for last 2 hours in 10-minute intervals
+        two_hours_ago = datetime.now() - timedelta(hours=2)
         hourly_pipeline = [
             {
                 '$match': {
-                    'timestamp': {'$gte': twenty_four_hours_ago.isoformat()}
+                    'timestamp': {'$gte': two_hours_ago.isoformat()}
+                }
+            },
+            {
+                '$addFields': {
+                    'dateObj': {'$dateFromString': {'dateString': '$timestamp'}},
+                }
+            },
+            {
+                '$addFields': {
+                    'minute10': {
+                        '$multiply': [
+                            {'$floor': {'$divide': [{'$minute': '$dateObj'}, 10]}},
+                            10
+                        ]
+                    }
                 }
             },
             {
                 '$group': {
                     '_id': {
                         '$dateToString': {
-                            'format': '%Y-%m-%d %H:00',
-                            'date': {'$dateFromString': {'dateString': '$timestamp'}}
+                            'format': '%Y-%m-%d %H:%M',
+                            'date': {
+                                '$dateFromParts': {
+                                    'year': {'$year': '$dateObj'},
+                                    'month': {'$month': '$dateObj'},
+                                    'day': {'$dayOfMonth': '$dateObj'},
+                                    'hour': {'$hour': '$dateObj'},
+                                    'minute': '$minute10'
+                                }
+                            }
                         }
                     },
                     'count': {'$sum': 1}
@@ -377,6 +400,16 @@ def get_recent_packets(limit=20):
             {},
             {'_id': 0}
         ).sort('timestamp', -1).limit(limit))
+        
+        # Format timestamps for display
+        for packet in packets:
+            if 'timestamp' in packet:
+                try:
+                    # Convert ISO timestamp to readable time format
+                    dt = datetime.fromisoformat(packet['timestamp'])
+                    packet['display_time'] = dt.strftime('%H:%M:%S')
+                except:
+                    packet['display_time'] = packet['timestamp'][-8:] if len(packet['timestamp']) >= 8 else packet['timestamp']
         
         return packets
         
