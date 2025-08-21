@@ -12,6 +12,8 @@ from pymongo import MongoClient
 from functools import wraps
 import threading
 import time
+import subprocess
+import re
 
 # Import our modules
 from key_manager import KeyManager
@@ -22,22 +24,43 @@ template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'we
 static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web', 'static'))
 
 app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
+
+@app.template_filter('strptime')
+def _strptime(string, fmt='%Y-%m-%dT%H:%M:%S'):
+    return datetime.strptime(string, fmt)
+
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this')
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def get_active_interface():
+    """Get the active network interface."""
+    try:
+        # Get the default route to find the primary interface
+        result = subprocess.run(['ip', 'route', 'get', '1.1.1.1'], capture_output=True, text=True, check=True)
+        match = re.search(r'dev\s+(\S+)', result.stdout)
+        if match:
+            interface = match.group(1)
+            logger.info(f"Automatically detected active interface: {interface}")
+            return interface
+    except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
+        logger.warning("Could not automatically detect interface. Falling back to config.")
+        return None
 
 # Configuration
 MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
 DB_NAME = os.environ.get('DB_NAME', 'traffic_monitor')
-INTERFACE = os.environ.get('INTERFACE', 'wlan0')
+# Automatically detect interface, with fallback to config file
+detected_interface = get_active_interface()
+INTERFACE = os.environ.get('INTERFACE', detected_interface or config['capture']['interface'])
 
 # Initialize components
 key_manager = KeyManager()
 packet_capture = None
 mongo_client = None
 db = None
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def init_mongodb():
     """Initialize MongoDB connection"""
@@ -214,7 +237,7 @@ def admin():
     """Admin panel"""
     try:
         users = key_manager.list_users()
-        return render_template('admin.html', users=users)
+        return render_template('admin.html', users=users, now=datetime.utcnow())
     except Exception as e:
         logger.error(f"Error in admin panel: {e}")
         flash('Error loading admin panel', 'error')
@@ -316,10 +339,69 @@ def api_realtime_stats():
         logger.error(f"Error getting realtime stats: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/stats/traffic_over_time')
+@login_required
+def api_traffic_over_time():
+    """API endpoint for traffic over time data"""
+    try:
+        ip_list_str = request.args.get('ips')
+        ips = ip_list_str.split(',') if ip_list_str else []
+
+        two_hours_ago = datetime.now() - timedelta(hours=2)
+        match_filter = {'timestamp': {'$gte': two_hours_ago.isoformat()}}
+        
+        if ips:
+            match_filter['src_ip'] = {'$in': ips}
+            group_id = {
+                'ip': '$src_ip',
+                'time': {
+                    '$dateToString': {
+                        'format': '%Y-%m-%d %H:%M',
+                        'date': {
+                            '$dateFromParts': {
+                                'year': {'$year': {'$dateFromString': {'dateString': '$timestamp'}}},
+                                'month': {'$month': {'$dateFromString': {'dateString': '$timestamp'}}},
+                                'day': {'$dayOfMonth': {'$dateFromString': {'dateString': '$timestamp'}}},
+                                'hour': {'$hour': {'$dateFromString': {'dateString': '$timestamp'}}},
+                                'minute': {'$multiply': [{'$floor': {'$divide': [{'$minute': {'$dateFromString': {'dateString': '$timestamp'}}}, 10]}}, 10]}
+                            }
+                        }
+                    }
+                }
+            }
+        else:
+            group_id = {
+                '$dateToString': {
+                    'format': '%Y-%m-%d %H:%M',
+                    'date': {
+                        '$dateFromParts': {
+                            'year': {'$year': {'$dateFromString': {'dateString': '$timestamp'}}},
+                            'month': {'$month': {'$dateFromString': {'dateString': '$timestamp'}}},
+                            'day': {'$dayOfMonth': {'$dateFromString': {'dateString': '$timestamp'}}},
+                            'hour': {'$hour': {'$dateFromString': {'dateString': '$timestamp'}}},
+                            'minute': {'$multiply': [{'$floor': {'$divide': [{'$minute': {'$dateFromString': {'dateString': '$timestamp'}}}, 10]}}, 10]}
+                        }
+                    }
+                }
+            }
+
+        pipeline = [
+            {'$match': match_filter},
+            {'$group': {'_id': group_id, 'count': {'$sum': 1}}},
+            {'$sort': {'_id': 1}}
+        ]
+        
+        results = list(db.packets.aggregate(pipeline))
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"Error getting traffic over time: {e}")
+        return jsonify({'error': str(e)}), 500
+
 def get_traffic_stats():
     """Get traffic statistics"""
     try:
         total_packets = db.packets.count_documents({})
+        logger.info(f"Found {total_packets} total packets in the database.")
         
         # Get protocol distribution
         protocol_pipeline = [
@@ -534,6 +616,19 @@ def api_admin_stats():
         
     except Exception as e:
         logger.error(f"Error getting admin stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/db/clear', methods=['POST'])
+@admin_required
+def api_clear_db():
+    """Clear the packets collection from the database"""
+    try:
+        db.packets.drop()
+        logger.info(f"User {session['user_id']} cleared the packets database.")
+        flash('Packet database cleared successfully!', 'success')
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error clearing database: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health')

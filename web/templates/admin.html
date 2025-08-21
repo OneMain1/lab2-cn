@@ -122,8 +122,7 @@
                                 <td>{{ user.created_at[:10] }}</td>
                                 <td>
                                     {{ user.expires_at[:10] }}
-                                    {% set expires_date = user.expires_at[:19] | string | strptime('%Y-%m-%dT%H:%M:%S') %}
-                                    {% set now = moment().datetime %}
+                                    {% set expires_date = user.expires_at[:19] | strptime('%Y-%m-%dT%H:%M:%S') %}
                                     {% if expires_date < now %}
                                         <span class="badge bg-danger ms-1">Expired</span>
                                     {% elif (expires_date - now).days < 7 %}
@@ -216,6 +215,9 @@
                 </div>
                 <button class="btn btn-outline-primary btn-sm w-100" onclick="loadSystemStats()">
                     <i class="fas fa-sync-alt"></i> Refresh Stats
+                </button>
+                <button class="btn btn-outline-danger btn-sm w-100 mt-2" onclick="initializeDatabase()">
+                    <i class="fas fa-trash"></i> Initialize Database
                 </button>
             </div>
         </div>
@@ -382,6 +384,25 @@ function formatBytes(bytes) {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function initializeDatabase() {
+    if (confirm('Are you sure you want to delete all packet data? This action cannot be undone.')) {
+        fetch('/api/admin/db/clear', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Packet database has been cleared.');
+                    location.reload();
+                } else {
+                    alert('Error clearing database: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error clearing database:', error);
+                alert('Error clearing database');
+            });
+    }
 }
 
 // Auto-refresh stats every 30 seconds

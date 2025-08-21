@@ -111,6 +111,12 @@
         <div class="card">
             <div class="card-header">
                 <h5><i class="fas fa-chart-line"></i> Traffic Over Time (2h) <small id="chartLastUpdate" class="text-muted"></small></h5>
+                <div class="ms-auto">
+                    <select id="trafficChartMode" class="form-select form-select-sm">
+                        <option value="overall" selected>Overall</option>
+                        <option value="per-ip">Top 5 IPs</option>
+                    </select>
+                </div>
             </div>
             <div class="card-body">
                 <canvas id="trafficChart" width="400" height="200"></canvas>
@@ -239,17 +245,8 @@ const chartLabels = hourlyData.map(h => {
 const trafficChart = new Chart(trafficCtx, {
     type: 'line',
     data: {
-        labels: chartLabels,
-        datasets: [{
-            label: 'Packets per 10min',
-            data: hourlyData.map(h => h.count),
-            borderColor: '#36A2EB',
-            backgroundColor: 'rgba(54, 162, 235, 0.1)',
-            fill: true,
-            tension: 0.4,
-            pointRadius: 4,
-            pointHoverRadius: 6
-        }]
+        labels: [],
+        datasets: []
     },
     options: {
         responsive: true,
@@ -295,6 +292,61 @@ const trafficChart = new Chart(trafficCtx, {
         }
     }
 });
+
+updateTrafficChart();
+
+document.getElementById('trafficChartMode').addEventListener('change', updateTrafficChart);
+
+function updateTrafficChart() {
+    const mode = document.getElementById('trafficChartMode').value;
+
+    if (mode === 'overall') {
+        fetch('/api/stats/traffic_over_time')
+            .then(response => response.json())
+            .then(data => {
+                const labels = data.map(d => d._id.split(' ')[1]);
+                const counts = data.map(d => d.count);
+                trafficChart.data.labels = labels;
+                trafficChart.data.datasets = [{
+                    label: 'Overall Packets',
+                    data: counts,
+                    borderColor: '#36A2EB',
+                    backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }];
+                trafficChart.update();
+            });
+    } else if (mode === 'per-ip') {
+        fetch('/api/stats')
+            .then(response => response.json())
+            .then(stats => {
+                const topIps = stats.top_sources.slice(0, 5).map(s => s._id);
+                fetch(`/api/stats/traffic_over_time?ips=${topIps.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const datasets = topIps.map((ip, index) => {
+                            const ipData = data.filter(d => d._id.ip === ip);
+                            const labels = ipData.map(d => d._id.time.split(' ')[1]);
+                            const counts = ipData.map(d => d.count);
+                            const color = ['#FF6384', '#4BC0C0', '#FFCE56', '#9966FF', '#FF9F40'][index];
+                            return {
+                                label: ip,
+                                data: counts,
+                                borderColor: color,
+                                backgroundColor: 'transparent',
+                                fill: false,
+                                tension: 0.4
+                            };
+                        });
+                        const allLabels = [...new Set(data.map(d => d._id.time.split(' ')[1]))].sort();
+                        trafficChart.data.labels = allLabels;
+                        trafficChart.data.datasets = datasets;
+                        trafficChart.update();
+                    });
+            });
+    }
+}
 
 // Auto-refresh functionality
 let autoRefresh = setInterval(updateRealtimeData, 2000);
@@ -416,43 +468,8 @@ function updateDashboardStats() {
                 protocolChart.update();
             }
             
-            // Update traffic chart with sliding window effect
-            if (typeof trafficChart !== 'undefined' && data.hourly_stats) {
-                // Process labels same way as initial chart
-                const newLabels = data.hourly_stats.map(h => {
-                    const parts = h._id.split(' ');
-                    if (parts.length >= 2) {
-                        const time = parts[1];
-                        return time;
-                    }
-                    return h._id;
-                });
-                
-                const newData = data.hourly_stats.map(h => h.count);
-                
-                // Update chart with smooth animation
-                trafficChart.data.labels = newLabels;
-                trafficChart.data.datasets[0].data = newData;
-                
-                // Auto-scale Y axis based on data
-                if (newData.length > 0) {
-                    const maxValue = Math.max(...newData);
-                    const suggestedMax = Math.max(10, Math.ceil(maxValue * 1.2));
-                    trafficChart.options.scales.y.suggestedMax = suggestedMax;
-                }
-                
-                // Update with animation
-                trafficChart.update('active');
-                
-                // Update chart timestamp
-                const chartUpdateElement = document.getElementById('chartLastUpdate');
-                if (chartUpdateElement) {
-                    const now = new Date();
-                    chartUpdateElement.textContent = `(Updated: ${now.toLocaleTimeString()})`;
-                }
-                
-                console.log(`Chart updated: ${newLabels.length} data points, latest: ${newLabels[newLabels.length-1]}`);
-            }
+            // Update traffic chart
+            updateTrafficChart();
             
             // Update top sources table
             const topSourcesTable = document.getElementById('topSourcesTable');

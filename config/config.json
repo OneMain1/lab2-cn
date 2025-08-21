@@ -16,7 +16,7 @@
     "lockout_duration_minutes": 30
   },
   "capture": {
-    "interface": "wlp0s20f3",
+    "interface": "lo",
     "buffer_size": 65535,
     "timeout": 30,
     "protocols": ["TCP", "UDP", "ICMP", "HTTP", "HTTPS", "DNS"],
