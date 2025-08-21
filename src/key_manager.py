@@ -35,6 +35,9 @@ class KeyManager:
         # Initialize or load keys
         self.initialize_keys()
         self.load_users_db()
+        
+        # Create default admin after loading users database
+        self.create_default_admin()
     
     def initialize_keys(self):
         """Initialize or load RSA key pair"""
@@ -88,6 +91,35 @@ class KeyManager:
         os.chmod(private_key_path, 0o600)
         os.chmod(public_key_path, 0o644)
     
+    def create_default_admin(self):
+        """Create default admin user with fixed password"""
+        admin_username = "admin"
+        admin_password = "admin123"
+        
+        # Check if admin user already exists
+        if admin_username not in self.users_db:
+            try:
+                self.create_user(admin_username, admin_password, "admin", 365)
+                self.logger.info(f"Default admin user created: {admin_username}")
+                
+                # Save admin credentials to file for reference
+                credentials_path = os.path.join(self.keys_dir, 'admin_credentials.txt')
+                with open(credentials_path, 'w') as f:
+                    f.write(f"Default Admin Credentials\n")
+                    f.write(f"========================\n")
+                    f.write(f"Username: {admin_username}\n")
+                    f.write(f"Password: {admin_password}\n")
+                    f.write(f"Role: admin\n")
+                    f.write(f"Created: {datetime.now().isoformat()}\n")
+                
+                os.chmod(credentials_path, 0o600)
+                self.logger.info(f"Admin credentials saved to {credentials_path}")
+                
+            except ValueError as e:
+                self.logger.warning(f"Could not create default admin: {e}")
+        else:
+            self.logger.info("Admin user already exists")
+    
     def load_keys(self):
         """Load RSA keys from files"""
         private_key_path = os.path.join(self.keys_dir, 'private_key.pem')
@@ -133,10 +165,10 @@ class KeyManager:
                     self.users_db = json.load(f)
                 self.logger.info("Users database loaded")
             else:
-                self.create_default_admin()
+                self.users_db = {}
         except Exception as e:
             self.logger.error(f"Error loading users database: {e}")
-            self.create_default_admin()
+            self.users_db = {}
     
     def save_users_db(self):
         """Save users database"""
@@ -149,8 +181,8 @@ class KeyManager:
         except Exception as e:
             self.logger.error(f"Error saving users database: {e}")
     
-    def create_default_admin(self):
-        """Create default admin user"""
+    def create_default_admin_old(self):
+        """Create default admin user (OLD VERSION - DISABLED)"""
         admin_password = secrets.token_urlsafe(16)
         self.create_user('admin', admin_password, role='admin')
         

@@ -1,9 +1,9 @@
 {
   "admin": {
-    "password_hash": "VwkK0ikD24KYi198kfm9ZC+jcsvYocFZ6yGWs1fkS5xsCH5QcQcWDjlHcgXn1y6lj579rejy51xlbo0r0zbIBA==",
+    "password_hash": "D5CLo0RFm7fVpq3TYPPqE5XJ1UtkgLwu6VAxF0so9CyQV0Ar34Uwc/zWW/7FmAPduYmNP7kNhaYqZDgQghpVHw==",
     "role": "admin",
-    "created_at": "2025-07-24T17:06:06.291624",
-    "expires_at": "2025-08-23T17:06:06.264038",
+    "created_at": "2025-08-21T14:43:18.726047",
+    "expires_at": "2025-09-20T14:43:18.703965",
     "active": true
   }
 }
